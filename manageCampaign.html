@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Campaigns - Crowdfunding </title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="crowdfunding.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navbar -->
+  <div id="navbar-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Load Navbar from navbar.html
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-container").innerHTML = data;
+        })
+        .then(() => {
+          // After navbar loads, update it dynamically
+          const loggedInUser = localStorage.getItem("loggedInUser");
+          const userRole = localStorage.getItem("userRole");
+          const navLinks = document.getElementById("nav-links");
+          const loginBtn = document.getElementById("login-btn");
+          const logoutBtn = document.getElementById("logout-btn");
+  
+          // Reset navbar links
+          navLinks.innerHTML = `<li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+  
+          if (loggedInUser) {
+            loginBtn.style.display = "none";
+            logoutBtn.style.display = "block";
+  
+            if (userRole === "admin") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>
+              `;
+            } else if (userRole === "user") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+                <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+                <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+              `;
+            }
+          }
+  
+          // Logout functionality
+          logoutBtn.addEventListener("click", function () {
+            localStorage.removeItem("loggedInUser");
+            localStorage.removeItem("userRole");
+            window.location.href = "index.html";
+          });
+  
+          // Login functionality
+          loginBtn.addEventListener("click", function () {
+            window.location.href = "login.html";
+          });
+        });
+    });
+  </script>
+  
+
+  <div class="container mt-4">
+    <h1>Manage My Campaigns</h1>
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Campaign ID</th>
+          <th>Name</th>
+          <th>Deadline</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="myCampaigns">
+        <!-- My campaigns will be loaded here -->
+      </tbody>
+    </table>
+    <div id="message" class="alert mt-3" style="display:none;"></div>
+  </div>
+
+  <script>
+    $(document).ready(function(){
+      window.CrowdfundingApp_instance = new CrowdfundingApp(Contracts.CrowdfundingContract);
+      window.CrowdfundingApp_instance.onReady(loadMyCampaigns);
+
+      function loadMyCampaigns(){
+        CrowdfundingApp_instance.instance.methods.nextCampaignId().call()
+          .then(function(campaignCount){
+            $("#myCampaigns").empty();
+            for(let i=0; i<campaignCount; i++){
+              (function(index){
+                CrowdfundingApp_instance.instance.methods.getCampaign(index).call()
+                  .then(function(campaign){
+                    // campaign: [name, description, goal, deadline, amountRaised, owner, withdrawn, status]
+                    if(campaign[5].toLowerCase() === CrowdfundingApp_instance.account.toLowerCase() &&
+                       (Number(campaign[7]) === 1)) { // Only approved campaigns
+                      let deadline = Number(campaign[3]);
+                      let rowHtml = `
+                        <tr>
+                          <td>${index}</td>
+                          <td>${campaign[0]}</td>
+                          <td>${new Date(deadline*1000).toLocaleString()}</td>
+                          <td>
+                            <button class="btn btn-info btn-sm extend-btn" data-id="${index}">Extend Deadline</button>
+                            <button class="btn btn-danger btn-sm delete-btn" data-id="${index}">Delete Campaign</button>
+                          </td>
+                        </tr>
+                      `;
+                      $("#myCampaigns").append(rowHtml);
+                    }
+                  })
+                  .catch(console.error);
+              })(i);
+            }
+          })
+          .catch(console.error);
+      }
+
+      $(document).on("click", ".extend-btn", function(){
+        var campaignId = $(this).data("id");
+        var extraDays = prompt("Enter number of extra days to extend the deadline:");
+        if(!extraDays || isNaN(extraDays) || extraDays <= 0){
+          alert("Please enter a valid number of days.");
+          return;
+        }
+        CrowdfundingApp_instance.extendDeadline(campaignId, extraDays)
+          .then(function(receipt){
+            $("#message").removeClass("alert-danger").addClass("alert-success")
+              .text("Deadline extended successfully!").show();
+            loadMyCampaigns();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").removeClass("alert-success").addClass("alert-danger")
+              .text("Error extending deadline: " + error.message).show();
+          });
+      });
+
+      $(document).on("click", ".delete-btn", function(){
+        var campaignId = $(this).data("id");
+        if(!confirm("Are you sure you want to delete this campaign? All donor funds will be refunded.")){
+          return;
+        }
+        CrowdfundingApp_instance.deleteCampaign(campaignId)
+          .then(function(receipt){
+            $("#message").removeClass("alert-danger").addClass("alert-success")
+              .text("Campaign deleted successfully and donors refunded!").show();
+            loadMyCampaigns();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").removeClass("alert-success").addClass("alert-danger")
+              .text("Error deleting campaign: " + error.message).show();
+          });
+      });
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module">
+    import { checkAuth } from "./firebase-config.js";
+  
+    checkAuth(user => {
+      if (!user) {
+        window.location.href = "index.html"; // Redirect if not logged in
+      }
+    });
+  </script>  
+</body>
+</html>

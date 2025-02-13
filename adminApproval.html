@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Approval - Crowdfunding </title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="crowdfunding.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navbar -->
+  <div id="navbar-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Load Navbar from navbar.html
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-container").innerHTML = data;
+        })
+        .then(() => {
+          // After navbar loads, update it dynamically
+          const loggedInUser = localStorage.getItem("loggedInUser");
+          const userRole = localStorage.getItem("userRole");
+          const navLinks = document.getElementById("nav-links");
+          const loginBtn = document.getElementById("login-btn");
+          const logoutBtn = document.getElementById("logout-btn");
+  
+          // Reset navbar links
+          navLinks.innerHTML = `<li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+  
+          if (loggedInUser) {
+            loginBtn.style.display = "none";
+            logoutBtn.style.display = "block";
+  
+            if (userRole === "admin") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>
+              `;
+            } else if (userRole === "user") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+                <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+                <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+              `;
+            }
+          }
+  
+          // Logout functionality
+          logoutBtn.addEventListener("click", function () {
+            localStorage.removeItem("loggedInUser");
+            localStorage.removeItem("userRole");
+            window.location.href = "index.html";
+          });
+  
+          // Login functionality
+          loginBtn.addEventListener("click", function () {
+            window.location.href = "login.html";
+          });
+        });
+    });
+  </script>
+  
+
+  <div class="container mt-4">
+    <h1>Pending Campaign Approvals</h1>
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Campaign ID</th>
+          <th>Name</th>
+          <th>Goal (wei)</th>
+          <th>Deadline</th>
+          <th>Owner</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="pendingCampaigns">
+        <!-- Pending campaigns will be loaded here -->
+      </tbody>
+    </table>
+    <div id="message" class="alert mt-3" style="display:none;"></div>
+  </div>
+
+  <!-- Admin Campaign Details Modal -->
+  <div class="modal fade" id="adminCampaignModal" tabindex="-1" aria-labelledby="adminCampaignModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="adminCampaignModalLabel">Campaign Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="adminCampaignDetailContent">
+            <!-- Campaign details will be loaded here -->
+          </div>
+          <div id="adminActionSection" class="mt-3">
+            <!-- Approve/Reject buttons will appear here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const loggedInUser = localStorage.getItem("loggedInUser");
+      const userRole = localStorage.getItem("userRole");
+      const navLinks = document.getElementById("nav-links");
+      const loginBtn = document.getElementById("login-btn");
+      const logoutBtn = document.getElementById("logout-btn");
+
+      // Default links for public users
+      navLinks.innerHTML = `
+      <li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+
+      if (loggedInUser) {
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "block";
+
+        if (userRole === "admin") {
+          navLinks.innerHTML += `
+          <li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>
+          <li class="nav-item"><a class="nav-link" href="activeCampaigns(A).html">Active Campaigns</a></li>`;
+        } else if (userRole === "user") {
+          navLinks.innerHTML += `
+            <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+            <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+            <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+            <li class="nav-item"><a class="nav-link" href="activeCampaigns(U).html">Active Campaigns</a></li>
+          `;
+        }
+      }
+
+      // Logout event
+      logoutBtn.addEventListener("click", function () {
+        localStorage.removeItem("loggedInUser");
+        localStorage.removeItem("userRole");
+        window.location.href = "index.html";
+      });
+
+      // Redirect to login page
+      loginBtn.addEventListener("click", function () {
+        window.location.href = "login.html";
+      });
+    });
+  </script>
+  <script>
+    $(document).ready(function(){
+      window.CrowdfundingApp_instance = new CrowdfundingApp(Contracts.CrowdfundingContract);
+      window.CrowdfundingApp_instance.onReady(loadPendingCampaigns);
+
+      function loadPendingCampaigns(){
+        CrowdfundingApp_instance.instance.methods.nextCampaignId().call()
+          .then(function(campaignCount){
+            $("#pendingCampaigns").empty();
+            for(let i=0; i<campaignCount; i++){
+              (function(index){
+                CrowdfundingApp_instance.instance.methods.getCampaign(index).call()
+                  .then(function(campaign){
+                    // campaign: [name, description, goal, deadline, amountRaised, owner, withdrawn, status]
+                    if(Number(campaign[7]) === 0){ // Pending
+                      let deadline = Number(campaign[3]);
+                      let rowHtml = `
+                        <tr>
+                          <td>${index}</td>
+                          <td>${campaign[0]}</td>
+                          <td>${campaign[2]}</td>
+                          <td>${new Date(deadline * 1000).toLocaleString()}</td>
+                          <td>${campaign[5]}</td>
+                          <td><button class="btn btn-primary btn-sm view-btn" data-id="${index}">View</button></td>
+                        </tr>
+                      `;
+                      $("#pendingCampaigns").append(rowHtml);
+                    }
+                  })
+                  .catch(console.error);
+              })(i);
+            }
+          })
+          .catch(console.error);
+      }
+
+      $(document).on("click", ".view-btn", function(){
+        var campaignId = $(this).data("id");
+        viewAdminCampaignDetails(campaignId);
+      });
+
+      function viewAdminCampaignDetails(campaignId){
+        CrowdfundingApp_instance.instance.methods.getCampaign(campaignId).call()
+          .then(function(campaign){
+            let deadline = Number(campaign[3]);
+            let detailsHtml = `
+              <h3>${campaign[0]}</h3>
+              <p><strong>Description:</strong> ${campaign[1]}</p>
+              <p><strong>Goal:</strong> ${campaign[2]} wei</p>
+              <p><strong>Deadline:</strong> ${new Date(deadline * 1000).toLocaleString()}</p>
+              <p><strong>Amount Raised:</strong> ${campaign[4]} wei</p>
+              <p><strong>Owner:</strong> ${campaign[5]}</p>
+            `;
+            $("#adminCampaignDetailContent").html(detailsHtml);
+            let actionHtml = `
+              <button class="btn btn-success btn-sm approve-btn" data-id="${campaignId}">Approve</button>
+              <button class="btn btn-danger btn-sm reject-btn" data-id="${campaignId}">Reject</button>
+            `;
+            $("#adminActionSection").html(actionHtml);
+            var adminModal = new bootstrap.Modal(document.getElementById('adminCampaignModal'));
+            adminModal.show();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").text("Error fetching campaign details: " + error.message).show();
+          });
+      }
+
+      $(document).on("click", ".approve-btn", function(){
+        var campaignId = $(this).data("id");
+        CrowdfundingApp_instance.approveCampaign(campaignId)
+          .then(function(receipt){
+            $("#message").removeClass("alert-danger").addClass("alert-success")
+              .text("Campaign approved successfully!").show();
+            loadPendingCampaigns();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").removeClass("alert-success").addClass("alert-danger")
+              .text("Error approving campaign: " + error.message).show();
+          });
+      });
+
+      $(document).on("click", ".reject-btn", function(){
+        var campaignId = $(this).data("id");
+        var reason = prompt("Enter rejection reason:");
+        if(!reason || reason.trim() === ""){
+          alert("Rejection reason is required.");
+          return;
+        }
+        CrowdfundingApp_instance.rejectCampaign(campaignId, reason)
+          .then(function(receipt){
+            $("#message").removeClass("alert-danger").addClass("alert-success")
+              .text("Campaign rejected successfully!").show();
+            loadPendingCampaigns();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").removeClass("alert-success").addClass("alert-danger")
+              .text("Error rejecting campaign: " + error.message).show();
+          });
+      });
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module">
+    import { checkAuth } from "./firebase-config.js";
+  
+    checkAuth(user => {
+      if (!user || user.email !== "admin@example.com") {
+        window.location.href = "index.html"; // Redirect if not admin
+      }
+    });
+  </script>  
+</body>
+</html>

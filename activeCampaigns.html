@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Active Campaigns - Crowdfunding </title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="crowdfunding.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Navbar -->
+  <div id="navbar-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Load Navbar from navbar.html
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-container").innerHTML = data;
+        })
+        .then(() => {
+          // After navbar loads, update it dynamically
+          const loggedInUser = localStorage.getItem("loggedInUser");
+          const userRole = localStorage.getItem("userRole");
+          const navLinks = document.getElementById("nav-links");
+          const loginBtn = document.getElementById("login-btn");
+          const logoutBtn = document.getElementById("logout-btn");
+  
+          // Reset navbar links
+          navLinks.innerHTML = `<li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+  
+          if (loggedInUser) {
+            loginBtn.style.display = "none";
+            logoutBtn.style.display = "block";
+  
+            if (userRole === "admin") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>
+              `;
+            } else if (userRole === "user") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+                <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+                <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+              `;
+            }
+          }
+  
+          // Logout functionality
+          logoutBtn.addEventListener("click", function () {
+            localStorage.removeItem("loggedInUser");
+            localStorage.removeItem("userRole");
+            window.location.href = "index.html";
+          });
+  
+          // Login functionality
+          loginBtn.addEventListener("click", function () {
+            window.location.href = "login.html";
+          });
+        });
+    });
+  </script>  
+
+  <div class="container mt-4">
+    <h1>Active Campaigns</h1>
+    <div class="row" id="campaignCatalog">
+      <!-- Campaign cards will be injected here -->
+    </div>
+  </div>
+
+  <!-- Campaign Details Modal -->
+  <div class="modal fade" id="campaignModal" tabindex="-1" aria-labelledby="campaignModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="campaignModalLabel">Campaign Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="campaignDetailContent">
+            <!-- Details loaded here -->
+          </div>
+          <div id="donationSection" class="mt-3">
+            <!-- Donation form will appear if campaign is active -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="message" class="container alert mt-3" style="display:none;"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const loggedInUser = localStorage.getItem("loggedInUser");
+      const userRole = localStorage.getItem("userRole");
+      const navLinks = document.getElementById("nav-links");
+      const loginBtn = document.getElementById("login-btn");
+      const logoutBtn = document.getElementById("logout-btn");
+  
+      // Default links for public users
+      navLinks.innerHTML = `<li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+  
+      if (loggedInUser) {
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "block";
+  
+        if (userRole === "admin") {
+          navLinks.innerHTML += `<li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>`;
+        } else if (userRole === "user") {
+          navLinks.innerHTML += `
+            <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+            <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+            <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+          `;
+        }
+      }
+  
+      // ✅ Fix: Attach Event Listener to Login Button
+      if (loginBtn) {
+        loginBtn.addEventListener("click", function () {
+          window.location.href = "login.html";
+        });
+      }
+  
+      // ✅ Fix: Ensure Logout Button Works
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", function () {
+          localStorage.removeItem("loggedInUser");
+          localStorage.removeItem("userRole");
+          window.location.href = "index.html";
+        });
+      }
+    });
+  </script>
+  <script>
+    $(document).ready(function(){
+      window.CrowdfundingApp_instance = new CrowdfundingApp(Contracts.CrowdfundingContract);
+      window.CrowdfundingApp_instance.onReady(loadActiveCampaigns);
+
+      function loadActiveCampaigns(){
+        CrowdfundingApp_instance.instance.methods.nextCampaignId().call()
+          .then(function(campaignCount){
+            $("#campaignCatalog").empty();
+            for(let i=0; i<campaignCount; i++){
+              (function(index){
+                CrowdfundingApp_instance.instance.methods.getCampaign(index).call()
+                  .then(function(campaign){
+                    // campaign: [name, description, goal, deadline, amountRaised, owner, withdrawn, status]
+                    let status = Number(campaign[7]);
+                    let deadline = Number(campaign[3]);
+                    let now = Math.floor(Date.now()/1000);
+                    // Only display active campaigns: status Approved (1), not withdrawn, and deadline in future.
+                    if(status === 1 && now < deadline && campaign[6] == false){
+                      let timeLeft = deadline - now;
+                      let cardHtml = `
+                        <div class="col-md-4">
+                          <div class="card campaign-card mb-3" data-id="${index}">
+                            <div class="card-body">
+                              <h5 class="card-title">${campaign[0]}</h5>
+                              <p class="card-text">Goal: ${campaign[2]} wei</p>
+                              <p class="card-text">Time left: ${Math.floor(timeLeft/3600)} hours</p>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                      $("#campaignCatalog").append(cardHtml);
+                    }
+                  })
+                  .catch(console.error);
+              })(i);
+            }
+          })
+          .catch(console.error);
+      }
+
+      $(document).on("click", ".campaign-card", function(){
+        var campaignId = $(this).data("id");
+        viewCampaignDetails(campaignId);
+      });
+
+      function viewCampaignDetails(campaignId){
+        CrowdfundingApp_instance.instance.methods.getCampaign(campaignId).call()
+          .then(function(campaign){
+            let deadline = Number(campaign[3]);
+            let now = Math.floor(Date.now()/1000);
+            let isActive = now < deadline && Number(campaign[7]) === 1 && campaign[6]==false;
+            let detailsHtml = `
+              <h3>${campaign[0]}</h3>
+              <p><strong>Description:</strong> ${campaign[1]}</p>
+              <p><strong>Goal:</strong> ${campaign[2]} wei</p>
+              <p><strong>Deadline:</strong> ${new Date(deadline*1000).toLocaleString()}</p>
+              <p><strong>Amount Raised:</strong> ${campaign[4]} wei</p>
+              <p><strong>Owner:</strong> ${campaign[5]}</p>
+            `;
+            $("#campaignDetailContent").html(detailsHtml);
+            if(isActive){
+              let donationHtml = `
+                <h5>Donate to this Campaign</h5>
+                <form id="donationForm">
+                  <div class="mb-3">
+                    <input type="number" class="form-control" id="donationAmount" placeholder="Enter donation amount (wei)" required>
+                  </div>
+                  <button type="submit" class="btn btn-success">Donate</button>
+                </form>
+              `;
+              $("#donationSection").html(donationHtml);
+              $("#donationForm").submit(function(e){
+                e.preventDefault();
+                var amount = $("#donationAmount").val();
+                CrowdfundingApp_instance.fundCampaign(campaignId, amount)
+                  .then(function(receipt){
+                    $("#message").removeClass("alert-danger").addClass("alert-success")
+                      .text("Donation successful!").show();
+                    loadActiveCampaigns();
+                  })
+                  .catch(function(error){
+                    console.error(error);
+                    $("#message").removeClass("alert-success").addClass("alert-danger")
+                      .text("Error donating: " + error.message).show();
+                  });
+              });
+            } else {
+              $("#donationSection").html(`<p class="text-danger">This campaign is no longer active for donations.</p>`);
+            }
+            var campaignModal = new bootstrap.Modal(document.getElementById('campaignModal'));
+            campaignModal.show();
+          })
+          .catch(function(error){
+            console.error(error);
+            $("#message").text("Error fetching campaign details: " + error.message).show();
+          });
+      }
+    });
+  </script>
+   
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

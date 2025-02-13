@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract Crowdfunding {
+    // Mark admin as immutable
+    address public immutable admin;
+
+    constructor() {
+        admin = msg.sender;
+    }
+
+    // Campaign status: Pending (0), Approved (1), Rejected (2), Cancelled (3)
+    enum CampaignStatus { Pending, Approved, Rejected, Cancelled }
+
+    struct Campaign {
+        string name;
+        string description;
+        uint256 goal;          // Funding goal in wei
+        uint256 deadline;      // Unix timestamp when campaign ends
+        uint256 amountRaised;  // Total contributions received
+        address owner;         // Campaign creator
+        bool withdrawn;        // Whether funds have been withdrawn by owner
+        CampaignStatus status; // Approval status
+    }
+
+    // Mapping from campaign ID to Campaign details
+    mapping(uint256 => Campaign) private campaigns;
+    // Global mapping for contributions: campaignId => contributor => amount
+    mapping(uint256 => mapping(address => uint256)) private contributions;
+    // New mapping to store a list of donor addresses per campaign
+    mapping(uint256 => address[]) private donorList;
+    uint256 public nextCampaignId; // Auto-incrementing campaign ID
+
+    // EVENTS
+    event CampaignCreated(
+        uint256 campaignId,
+        string name,
+        uint256 goal,
+        uint256 deadline,
+        address owner
+    );
+    event CampaignApproved(uint256 campaignId);
+    event CampaignRejected(uint256 campaignId, string reason);
+    event CampaignFunded(uint256 campaignId, address contributor, uint256 amount);
+    event CampaignWithdrawn(uint256 campaignId, uint256 amount, address owner);
+    event CampaignRefunded(uint256 campaignId, address contributor, uint256 amount);
+    event CampaignExtended(uint256 campaignId, uint256 newDeadline);
+    event CampaignCancelled(uint256 campaignId);
+
+    // Modifier: only the admin can call
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Only admin can call this function");
+        _;
+    }
+
+    /// @notice Create a new crowdfunding campaign. (Status is set to Pending.)
+    function createCampaign(
+        string memory _name,
+        string memory _description,
+        uint256 _goal,
+        uint256 _durationInDays
+    ) external {
+        require(_goal > 0, "Goal must be > 0");
+        require(_durationInDays > 0, "Duration must be > 0");
+
+        uint256 deadline = block.timestamp + (_durationInDays * 1 days);
+        Campaign storage c = campaigns[nextCampaignId];
+        c.name = _name;
+        c.description = _description;
+        c.goal = _goal;
+        c.deadline = deadline;
+        c.amountRaised = 0;
+        c.owner = msg.sender;
+        c.withdrawn = false;
+        c.status = CampaignStatus.Pending; // New campaign is pending approval
+
+        emit CampaignCreated(nextCampaignId, _name, _goal, deadline, msg.sender);
+        nextCampaignId++;
+    }
+
+    /// @notice Approve a pending campaign. Only admin can call.
+    function approveCampaign(uint256 _campaignId) external onlyAdmin {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(c.status == CampaignStatus.Pending, "Campaign is not pending");
+        c.status = CampaignStatus.Approved;
+        emit CampaignApproved(_campaignId);
+    }
+
+    /// @notice Reject a pending campaign with a reason. Only admin can call.
+    function rejectCampaign(uint256 _campaignId, string memory reason) external onlyAdmin {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(c.status == CampaignStatus.Pending, "Campaign is not pending");
+        c.status = CampaignStatus.Rejected;
+        emit CampaignRejected(_campaignId, reason);
+    }
+
+    /// @notice Fund an approved campaign by sending Ether.
+    function fundCampaign(uint256 _campaignId) external payable {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(c.status == CampaignStatus.Approved, "Campaign is not approved");
+        require(block.timestamp < c.deadline, "Campaign has ended");
+        require(msg.value > 0, "Contribution must be > 0");
+
+        // If the contributor is donating for the first time, add them to the donor list.
+        if (contributions[_campaignId][msg.sender] == 0) {
+            donorList[_campaignId].push(msg.sender);
+        }
+
+        c.amountRaised += msg.value;
+        contributions[_campaignId][msg.sender] += msg.value;
+        emit CampaignFunded(_campaignId, msg.sender, msg.value);
+    }
+
+    /// @notice Withdraw funds if the campaign reached its goal.
+    function withdrawFunds(uint256 _campaignId) external {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(c.status == CampaignStatus.Approved, "Campaign is not approved");
+        require(msg.sender == c.owner, "Only campaign owner can withdraw");
+        require(block.timestamp >= c.deadline, "Campaign is still ongoing");
+        require(c.amountRaised >= c.goal, "Campaign did not reach its goal");
+        require(!c.withdrawn, "Funds already withdrawn");
+
+        c.withdrawn = true;
+        uint256 amount = c.amountRaised;
+        payable(c.owner).transfer(amount);
+        emit CampaignWithdrawn(_campaignId, amount, c.owner);
+    }
+
+    /// @notice Claim a refund if the campaign did not meet its goal.
+    function refund(uint256 _campaignId) external {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(block.timestamp >= c.deadline, "Campaign is still ongoing");
+        require(c.amountRaised < c.goal, "Campaign reached its goal; no refunds");
+
+        uint256 contributed = contributions[_campaignId][msg.sender];
+        require(contributed > 0, "No contributions to refund");
+
+        contributions[_campaignId][msg.sender] = 0;
+        payable(msg.sender).transfer(contributed);
+        emit CampaignRefunded(_campaignId, msg.sender, contributed);
+    }
+
+    /// @notice Extend the deadline for a campaign. Only the campaign creator can call.
+    function extendDeadline(uint256 _campaignId, uint256 _extraDays) external {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(msg.sender == c.owner, "Only campaign owner can extend the deadline");
+        require(block.timestamp < c.deadline, "Campaign already ended");
+        require(_extraDays > 0, "Extra days must be > 0");
+
+        c.deadline += (_extraDays * 1 days);
+        emit CampaignExtended(_campaignId, c.deadline);
+    }
+
+    /// @notice Delete (cancel) a campaign. Only the campaign creator can call.
+    ///         This function refunds all donors and marks the campaign as Cancelled.
+    function deleteCampaign(uint256 _campaignId) external {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        require(msg.sender == c.owner, "Only campaign owner can delete the campaign");
+        // Optionally, you may restrict deletion to campaigns that are still pending or approved.
+        require(c.status == CampaignStatus.Pending || c.status == CampaignStatus.Approved, "Campaign cannot be deleted");
+
+        // Refund all donors
+        address[] storage donors = donorList[_campaignId];
+        for (uint256 i = 0; i < donors.length; i++) {
+            address donor = donors[i];
+            uint256 amount = contributions[_campaignId][donor];
+            if (amount > 0) {
+                contributions[_campaignId][donor] = 0;
+                payable(donor).transfer(amount);
+                emit CampaignRefunded(_campaignId, donor, amount);
+            }
+        }
+
+        // Mark the campaign as Cancelled
+        c.status = CampaignStatus.Cancelled;
+        emit CampaignRejected(_campaignId, "Campaign deleted by owner");
+        emit CampaignCancelled(_campaignId);
+    }
+
+    /// @notice Retrieve campaign details.
+    function getCampaign(uint256 _campaignId)
+        external
+        view
+        returns (
+            string memory,
+            string memory,
+            uint256,
+            uint256,
+            uint256,
+            address,
+            bool,
+            uint8
+        )
+    {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        Campaign storage c = campaigns[_campaignId];
+        return (
+            c.name,
+            c.description,
+            c.goal,
+            c.deadline,
+            c.amountRaised,
+            c.owner,
+            c.withdrawn,
+            uint8(c.status)
+        );
+    }
+
+    /// @notice Retrieve the total contribution made by an address for a specific campaign.
+    function getContribution(uint256 _campaignId, address _contributor)
+        external
+        view
+        returns (uint256)
+    {
+        require(_campaignId < nextCampaignId, "Campaign does not exist");
+        return contributions[_campaignId][_contributor];
+    }
+}

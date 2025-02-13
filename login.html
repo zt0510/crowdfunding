@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Crowdfunding </title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <div id="navbar-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Load Navbar from navbar.html
+      fetch("navbar.html")
+        .then(response => response.text())
+        .then(data => {
+          document.getElementById("navbar-container").innerHTML = data;
+        })
+        .then(() => {
+          // After navbar loads, update it dynamically
+          const loggedInUser = localStorage.getItem("loggedInUser");
+          const userRole = localStorage.getItem("userRole");
+          const navLinks = document.getElementById("nav-links");
+          const loginBtn = document.getElementById("login-btn");
+          const logoutBtn = document.getElementById("logout-btn");
+  
+          // Reset navbar links
+          navLinks.innerHTML = `<li class="nav-item"><a class="nav-link" href="activeCampaigns.html">Active Campaigns</a></li>`;
+  
+          if (loggedInUser) {
+            loginBtn.style.display = "none";
+            logoutBtn.style.display = "block";
+  
+            if (userRole === "admin") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="adminApproval.html">Admin Approval</a></li>
+              `;
+            } else if (userRole === "user") {
+              navLinks.innerHTML += `
+                <li class="nav-item"><a class="nav-link" href="createCampaign.html">Create Campaign</a></li>
+                <li class="nav-item"><a class="nav-link" href="manageCampaign.html">Manage Campaigns</a></li>
+                <li class="nav-item"><a class="nav-link" href="campaignStatus.html">Campaign Status</a></li>
+              `;
+            }
+          }
+  
+          // Logout functionality
+          logoutBtn.addEventListener("click", function () {
+            localStorage.removeItem("loggedInUser");
+            localStorage.removeItem("userRole");
+            window.location.href = "index.html";
+          });
+  
+          // Login functionality
+          loginBtn.addEventListener("click", function () {
+            window.location.href = "login.html";
+          });
+        });
+    });
+  </script>
+  
+
+  <div class="container mt-5">
+    <h2>Login</h2>
+    <form id="loginForm">
+      <div class="mb-3">
+        <label for="email" class="form-label">Email:</label>
+        <input type="email" id="email" class="form-control" required>
+      </div>
+      <div class="mb-3">
+        <label for="password" class="form-label">Password:</label>
+        <input type="password" id="password" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+    <p id="error-message" class="text-danger mt-3"></p>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const loginForm = document.getElementById("loginForm");
+
+      loginForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value.trim();
+        const errorMessage = document.getElementById("error-message");
+
+        // Hardcoded user credentials
+        const users = {
+          "admin@gmail.com": { role: "admin", password: "12345678" },
+          "user@gmail.com": { role: "user", password: "87654321" }
+        };
+
+        if (users[email] && users[email].password === password) {
+          // Store user info in localStorage
+          localStorage.setItem("loggedInUser", email);
+          localStorage.setItem("userRole", users[email].role);
+          
+          // Redirect to index.html
+          window.location.href = "index.html";
+        } else {
+          errorMessage.innerText = "Invalid email or password.";
+        }
+      });
+    });
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
